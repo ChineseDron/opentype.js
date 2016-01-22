@@ -121,28 +121,36 @@ var standardNames = [
     'onehalf', 'onequarter', 'threequarters', 'franc', 'Gbreve', 'gbreve', 'Idotaccent', 'Scedilla', 'scedilla',
     'Cacute', 'cacute', 'Ccaron', 'ccaron', 'dcroat'];
 
+// This is the encoding used for fonts created from scratch.
+// It loops through all glyphs and finds the appropriate unicode value.
+// Since it's linear time, other encodings will be faster.
+function DefaultEncoding(font) {
+    this.font = font;
+}
+
+DefaultEncoding.prototype.charToGlyphIndex = function(c) {
+    var code = c.charCodeAt(0);
+    var glyphs = this.font.glyphs;
+    if (glyphs) {
+        for (var i = 0; i < glyphs.length; i += 1) {
+            var glyph = glyphs.get(i);
+            for (var j = 0; j < glyph.unicodes.length; j += 1) {
+                if (glyph.unicodes[j] === code) {
+                    return i;
+                }
+            }
+        }
+    } else {
+        return null;
+    }
+};
+
 function CmapEncoding(cmap) {
     this.cmap = cmap;
 }
 
-CmapEncoding.prototype.charToGlyphIndex = function (s) {
-    var ranges, code, l, c, r;
-    ranges = this.cmap;
-    code = s.charCodeAt(0);
-    l = 0;
-    r = ranges.length - 1;
-    while (l < r) {
-        c = (l + r + 1) >> 1;
-        if (code < ranges[c].start) {
-            r = c - 1;
-        } else {
-            l = c;
-        }
-    }
-    if (ranges[l].start <= code && code <= ranges[l].end) {
-        return (ranges[l].idDelta + (ranges[l].ids ? ranges[l].ids[code - ranges[l].start] : code)) & 0xFFFF;
-    }
-    return 0;
+CmapEncoding.prototype.charToGlyphIndex = function(c) {
+    return this.cmap.glyphIndexMap[c.charCodeAt(0)] || 0;
 };
 
 function CffEncoding(encoding, charset) {
@@ -150,10 +158,9 @@ function CffEncoding(encoding, charset) {
     this.charset = charset;
 }
 
-CffEncoding.prototype.charToGlyphIndex = function (s) {
-    var code, charName;
-    code = s.charCodeAt(0);
-    charName = this.encoding[code];
+CffEncoding.prototype.charToGlyphIndex = function(s) {
+    var code = s.charCodeAt(0);
+    var charName = this.encoding[code];
     return this.charset.indexOf(charName);
 };
 
@@ -172,28 +179,57 @@ function GlyphNames(post) {
                 this.names[i] = post.names[post.glyphNameIndex[i] - exports.standardNames.length];
             }
         }
+
         break;
     case 2.5:
         this.names = new Array(post.numberOfGlyphs);
         for (i = 0; i < post.numberOfGlyphs; i++) {
             this.names[i] = exports.standardNames[i + post.glyphNameIndex[i]];
         }
+
+        break;
+    case 3:
+        this.names = [];
         break;
     }
 }
 
-GlyphNames.prototype.nameToGlyphIndex = function (name) {
+GlyphNames.prototype.nameToGlyphIndex = function(name) {
     return this.names.indexOf(name);
 };
 
-GlyphNames.prototype.glyphIndexToName = function (gid) {
+GlyphNames.prototype.glyphIndexToName = function(gid) {
     return this.names[gid];
 };
+
+function addGlyphNames(font) {
+    var glyph;
+    var glyphIndexMap = font.tables.cmap.glyphIndexMap;
+    var charCodes = Object.keys(glyphIndexMap);
+
+    for (var i = 0; i < charCodes.length; i += 1) {
+        var c = charCodes[i];
+        var glyphIndex = glyphIndexMap[c];
+        glyph = font.glyphs.get(glyphIndex);
+        glyph.addUnicode(parseInt(c));
+    }
+
+    for (i = 0; i < font.glyphs.length; i += 1) {
+        glyph = font.glyphs.get(i);
+        if (font.cffEncoding) {
+            glyph.name = font.cffEncoding.charset[i];
+        } else {
+            glyph.name = font.glyphNames.glyphIndexToName(i);
+        }
+    }
+}
 
 exports.cffStandardStrings = cffStandardStrings;
 exports.cffStandardEncoding = cffStandardEncoding;
 exports.cffExpertEncoding = cffExpertEncoding;
 exports.standardNames = standardNames;
+exports.DefaultEncoding = DefaultEncoding;
 exports.CmapEncoding = CmapEncoding;
 exports.CffEncoding = CffEncoding;
 exports.GlyphNames = GlyphNames;
+exports.addGlyphNames = addGlyphNames;

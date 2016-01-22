@@ -5,12 +5,13 @@
 
 var encoding = require('../encoding');
 var parse = require('../parse');
+var table = require('../table');
 
 // Parse the PostScript `post` table
 function parsePostTable(data, start) {
-    var post = {},
-        p = new parse.Parser(data, start),
-        i, nameLength;
+    var post = {};
+    var p = new parse.Parser(data, start);
+    var i;
     post.version = p.parseVersion();
     post.italicAngle = p.parseFixed();
     post.underlinePosition = p.parseShort();
@@ -30,13 +31,15 @@ function parsePostTable(data, start) {
         for (i = 0; i < post.numberOfGlyphs; i++) {
             post.glyphNameIndex[i] = p.parseUShort();
         }
+
         post.names = [];
         for (i = 0; i < post.numberOfGlyphs; i++) {
             if (post.glyphNameIndex[i] >= encoding.standardNames.length) {
-                nameLength = p.parseChar();
+                var nameLength = p.parseChar();
                 post.names.push(p.parseString(nameLength));
             }
         }
+
         break;
     case 2.5:
         post.numberOfGlyphs = p.parseUShort();
@@ -44,9 +47,25 @@ function parsePostTable(data, start) {
         for (i = 0; i < post.numberOfGlyphs; i++) {
             post.offset[i] = p.parseChar();
         }
+
         break;
     }
     return post;
 }
 
+function makePostTable() {
+    return new table.Table('post', [
+        {name: 'version', type: 'FIXED', value: 0x00030000},
+        {name: 'italicAngle', type: 'FIXED', value: 0},
+        {name: 'underlinePosition', type: 'FWORD', value: 0},
+        {name: 'underlineThickness', type: 'FWORD', value: 0},
+        {name: 'isFixedPitch', type: 'ULONG', value: 0},
+        {name: 'minMemType42', type: 'ULONG', value: 0},
+        {name: 'maxMemType42', type: 'ULONG', value: 0},
+        {name: 'minMemType1', type: 'ULONG', value: 0},
+        {name: 'maxMemType1', type: 'ULONG', value: 0}
+    ]);
+}
+
 exports.parse = parsePostTable;
+exports.make = makePostTable;

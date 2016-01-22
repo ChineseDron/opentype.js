@@ -2,10 +2,10 @@
 <html>
 <head>
     <title>opentype.js font inspector</title>
-    <meta description="A JavaScript library to manipulate the letterforms of text from the browser or node.js.">
+    <meta name="description" content="A JavaScript library to manipulate the letterforms of text from the browser or node.js.">
     <meta charset="utf-8">
     <link rel="stylesheet" href="site.css">
-    <script type="text/javascript" src="opentype.js"></script>
+    <script type="text/javascript" src="dist/opentype.js"></script>
 </head>
 <body>
 <div class="header">
@@ -49,6 +49,8 @@
         <dl id="post-table"></dl>
         <h3 class="collapsed">Character To Glyph Index Mapping Table <a href="https://www.microsoft.com/typography/OTSPEC/cmap.htm" target="_blank">cmap</a></h3>
         <dl id="cmap-table"></dl>
+        <h3 class="collapsed">Font Variations table <a href="https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6fvar.html" target="_blank">fvar</a></h3>
+        <dl id="fvar-table"></dl>
     </div>
 
     <hr>
@@ -56,7 +58,7 @@
     <div class="explain">
         <h1>Free Software</h1>
         <p>opentype.js is available on <a href="https://github.com/nodebox/opentype.js">GitHub</a> under the <a href="https://raw.github.com/nodebox/opentype.js/master/LICENSE">MIT License</a>.</p>
-        <p>Copyright &copy; 2014 Frederik De Bleser.</p>
+        <p>Copyright &copy; 2015 Frederik De Bleser.</p>
     </div>
 
     <hr>
@@ -68,6 +70,30 @@ var font = null;
 var fontSize = 32;
 var textToRender = 'Grumpy wizards make toxic brew for the evil Queen and Jack.';
 var previewPath = null;
+
+function escapeHtml(unsafe) {
+    return unsafe
+         .replace(/&/g, '&amp;')
+         .replace(/</g, '&lt;')
+         .replace(/>/g, '&gt;')
+         .replace(/\u0022/g, '&quot;')
+         .replace(/\u0027/g, '&#039;');
+}
+
+function enableHighDPICanvas(canvas) {
+    if (typeof canvas === 'string') {
+        canvas = document.getElementById(canvas);
+    }
+    var pixelRatio = window.devicePixelRatio || 1;
+    if (pixelRatio === 1) return;
+    var oldWidth = canvas.width;
+    var oldHeight = canvas.height;
+    canvas.width = oldWidth * pixelRatio;
+    canvas.height = oldHeight * pixelRatio;
+    canvas.style.width = oldWidth + 'px';
+    canvas.style.height = oldHeight + 'px';
+    canvas.getContext('2d').scale(pixelRatio, pixelRatio);
+}
 
 function renderText() {
     if (!font) return;
@@ -88,28 +114,65 @@ function showErrorMessage(message) {
     el.innerHTML = message;
 }
 
+function sortKeys(dict) {
+    var keys = [];
+    for (var key in dict) {
+        keys.push(key);
+    }
+    keys.sort();
+    return keys;
+}
+
+function displayNames(names) {
+    var html = '';
+    properties = sortKeys(names);
+    for (var i = 0; i < properties.length; i++) {
+        var property = properties[i];
+        html += '<dt>'+escapeHtml(property)+'</dt><dd>';
+        var translations = names[property];
+        var langs = sortKeys(translations);
+        for (var j = 0; j < langs.length; j++) {
+            var lang = langs[j];
+            var esclang = escapeHtml(lang);
+            html += '<span class="langtag">' + esclang
+                + '</span> <span class="langname" lang=' + esclang + '>'
+                + escapeHtml(translations[lang]) + '</span> ';
+        }
+        html += '</dd>';
+    }
+
+    document.getElementById('name-table').innerHTML = html;
+}
+
 function displayFontData() {
     var html, tablename, table, property, value;
-    for(tablename in font.tables) {
+    for (tablename in font.tables) {
         table = font.tables[tablename];
+        if (tablename == 'name') {
+            displayNames(table);
+            continue;
+        }
+
         html = '';
-        for(property in table) {
+        for (property in table) {
             value = table[property];
             html += '<dt>'+property+'</dt><dd>';
-            if(Array.isArray(value) && typeof value[0] === 'object') {
+            if (Array.isArray(value) && typeof value[0] === 'object') {
                 html += value.map(function(item) {
                     return JSON.stringify(item);
                 }).join('<br>');
-            }
-            else {
+            } else {
                 html += value;
             }
             html += '</dd>';
         }
-        document.getElementById(tablename+"-table").innerHTML = html;
+        var element = document.getElementById(tablename+"-table");
+        if (element) {
+            element.innerHTML = html;
+        }
     }
 }
-    
+
 function onFontLoaded(font) {
     window.font = font;
     renderText();
@@ -120,16 +183,18 @@ function onReadFile(e) {
     document.getElementById('font-name').innerHTML = '';
     var file = e.target.files[0];
     var reader = new FileReader();
-    reader.onload = function (e) {
+    reader.onload = function(e) {
         try {
             font = opentype.parse(e.target.result);
             onFontLoaded(font);
             showErrorMessage('');
         } catch (err) {
             showErrorMessage(err.toString());
+            if (err.stack) console.log(err.stack);
+	    throw(err);
         }
     }
-    reader.onerror = function (err) {
+    reader.onerror = function(err) {
         showErrorMessage(err.toString());
     }
 
@@ -150,7 +215,9 @@ for(var i = tableHeaders.length; i--; ) {
     }, false);
 }
 
-opentype.load(fontFileName, function (err, font) {
+enableHighDPICanvas('preview');
+
+opentype.load(fontFileName, function(err, font) {
     var amount, glyph, ctx, x, y, fontSize;
     if (err) {
         showErrorMessage(err.toString());
